@@ -84,10 +84,6 @@ inline void Serializer::input_type(T t)
 	}    
 ```
 
-
-
-
-
 通过  `void Serializer::output_type()` 函数 和 重载 `operator >>` 运算符，实现反序列化： 
 
 ```c++
