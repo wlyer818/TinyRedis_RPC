@@ -1,12 +1,14 @@
 #include"RedisServer.h"
 
-
+//getInstance()是静态成员函数，要在类外定义
 RedisServer* RedisServer::getInstance()
 {
-	static RedisServer redis;
+    //C++11特性确保局部静态变量是线程安全的，static确保只有一个 RedisServer 类实例
+	static RedisServer redis;  //只会被创建一次
 	return &redis;
 }
 
+//打印logo
 void RedisServer::printLogo() {
     std::ifstream ifs(logoFilePath);
     if(!ifs.is_open()){
@@ -14,12 +16,13 @@ void RedisServer::printLogo() {
     }
     std::string line = "";
     while (std::getline(ifs, line)) {
-        replaceText(line, "PORT", std::to_string(port));
-        replaceText(line, "PTHREAD_ID", std::to_string(pid));
+        replaceText(line, "PORT", std::to_string(port)); //替换 logo 中的 PORT 字符串为实际端口号
+        replaceText(line, "PTHREAD_ID", std::to_string(pid)); //替换 logo 中的 PTHREAD_ID 字符串为实际线程 ID
         std::cout << line << std::endl;
     }
 }
 
+//打印 Redisserver 的启动信息
 void RedisServer::printStartMessage() {
     std::string startMessage = "[PID] DATE # Server started.";
     std::string initMessage = "[PID] DATE * The server is now ready to accept connections on port PORT";
@@ -35,9 +38,9 @@ void RedisServer::printStartMessage() {
 }
 
 void RedisServer::start() {
-    signal(SIGINT, signalHandler);  
-    printLogo();
-    printStartMessage();
+    signal(SIGINT, signalHandler);  //注册信号处理函数，当Ctrl+C终止程序时，执行signalHandler函数，将未保存的数据写入到文件中 
+    printLogo(); //打印启动logo
+    printStartMessage(); //打印RedisServer的启动信息
     // string s ;
     // while (!stop) {
     //     getline(cin,s);
@@ -46,12 +49,11 @@ void RedisServer::start() {
     // }
 }
 
-
 string RedisServer::executeTransaction(std::queue<std::string>&commandsQueue){
     //存储所有的执行结果
     std::vector<std::string>responseMessagesList; 
     while(!commandsQueue.empty()){
-        std::string receivedData = std::move(commandsQueue.front());
+        std::string receivedData = std::move(commandsQueue.front()); //移动语义，避免拷贝
         commandsQueue.pop();
         std::istringstream iss(receivedData);
         std::string command;
@@ -106,40 +108,55 @@ string RedisServer::executeTransaction(std::queue<std::string>&commandsQueue){
     return res;
 }
     
-
+//receivedData格式类似于 "set key value"，是redis 命令
 string RedisServer::handleClient(string receivedData) {
     
    size_t bytesRead = receivedData.length();
      if (bytesRead > 0) {
-         std::istringstream iss(receivedData);
+         std::istringstream iss(receivedData);  //类似于cin
          std::string command;
-         std::vector<std::string> tokens;
+         std::vector<std::string> tokens;  //存储命令中的每个单词,如{”set“, ”key“, ”value“}
+         //当iss遇到空格/换行时，会自动分割字符串
          while (iss >> command) { //以字符串分割
              tokens.push_back(command);
          }
-
+            /*
+            quit, exit, multi, exec, discard命令是redis事物指令，需要特殊处理
+            */
          if (!tokens.empty()) {
              command = tokens.front();
-             std::string responseMessage;
+             std::string responseMessage;  //命令的执行结果
+             //quit：与服务器断开连接； exit：退出客户端
              if (command == "quit" || command == "exit") {
                  responseMessage = "stop";
                  
                  return responseMessage;
              }
+             //multi命令：开启事物：
+             /*
+             MULTI
+            GET account1_balance
+            GET account2_balance
+            SET account1_balance new_balance1
+            SET account2_balance new_balance2
+            EXEC
+             */
              else if (command == "multi") {
-                 if (startMulti) {
+                 if (startMulti) {  //如果已经开启事物，返回重复开启事物的错误信息
                      responseMessage = "Open the transaction repeatedly!";
                      
                      return responseMessage;
                  }
                  startMulti = true;
                  std::queue<std::string> empty;
+                 //swap是为了高效清空commandsQueue
                  std::swap(empty, commandsQueue);
-                 responseMessage = "OK";
+                 responseMessage = "OK";  //事物开启成功
                  return responseMessage;
              }
-             else if (command == "exec") {
-                 if (startMulti == false) {
+             //exec命令：提交并开始执行事物
+             else if (command == "exec") {  
+                 if (startMulti == false) {  //未开启事物就执行exec命令，错误
                      //处理未打开事物就执行的操作
                      responseMessage = "No transaction is opened!";
                      return responseMessage;
@@ -157,6 +174,7 @@ string RedisServer::handleClient(string receivedData) {
                      return responseMessage;
                  }
              }
+             //discard命令：放弃事物
              else if (command == "discard") {
                  startMulti = false;
                  fallback = false;
@@ -164,7 +182,7 @@ string RedisServer::handleClient(string receivedData) {
                  return responseMessage;
              }
              else {
-                 //处理常规指令
+                 //处理常规指令，不是事物
                  if (!startMulti) {
                     std::shared_ptr<CommandParser> commandParser = flyweightFactory->getParser(command);
                      if (commandParser == nullptr) {
@@ -193,7 +211,7 @@ string RedisServer::handleClient(string receivedData) {
                      }
                      else {
                         //加入到队列
-                        commandsQueue.emplace(receivedData);
+                        commandsQueue.emplace(receivedData);  //将命令加入到事物队列中
                         responseMessage = "QUEUED";
                         return responseMessage;
                      }
@@ -222,7 +240,7 @@ void RedisServer::replaceText(std::string &text, const std::string &toReplaceTex
         start_pos = text.find(toReplaceText, start_pos + newText.length());
     }
 }
-//获取当前时间
+//获取当前时间，格式为"2021-07-01 12:00:00"
 std::string RedisServer::getDate() {
     auto now = std::chrono::system_clock::now();
     auto now_c = std::chrono::system_clock::to_time_t(now);
@@ -243,6 +261,7 @@ void RedisServer::signalHandler(int sig) {
 }
 
 
+//构造函数
 RedisServer::RedisServer(int port, const std::string& logoFilePath) 
 : port(port), logoFilePath(logoFilePath),
 flyweightFactory(new ParserFlyweightFactory()){
