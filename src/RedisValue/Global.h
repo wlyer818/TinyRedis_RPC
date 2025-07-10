@@ -31,7 +31,10 @@ static Statics& statics(){
 
 // 返回一个静态的null Json实例的引用，用于表示JSON中的null值。
 static RedisValue & staticNull(){
-    static RedisValue redisValueNull;
+    static RedisValue redisValueNull; //用redisValueNull表示null值
+    //静态局部变量在函数第一次被调用时初始化，之后保持不变，直到程序结束。
+    //因此，无论调用多少次staticNull()函数，返回的都是同一个RedisValue对象。
+    //redisValueNull静态的，所以在函数返回后不会被销毁，所以返回它的引用是安全的
     return redisValueNull;
 }
 
@@ -39,7 +42,9 @@ static RedisValue & staticNull(){
 // 如果字符是可打印的ASCII字符，则返回字符本身和其ASCII码；否则只返回ASCII码。
 static inline std::string esc(char c) {
     char buf[12];
+    //可打印的ASCII字符的ASCII码范围是32（0x20）到127（0x7f）
     if (static_cast<uint8_t>(c) >= 0x20 && static_cast<uint8_t>(c) <= 0x7f) {
+        //格式化输出，例如：'a' (97)
         snprintf(buf, sizeof buf, "'%c' (%d)", c, c);
     } else {
         snprintf(buf, sizeof buf, "(%d)", c);

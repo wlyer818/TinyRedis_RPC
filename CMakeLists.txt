@@ -32,3 +32,7 @@ target_link_libraries(server zmq)
 add_executable(client ${SRC_DIR}/client.cpp)
  set_target_properties(client PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${BIN_DIR})
 target_link_libraries(client zmq)
+# 编译test
+add_executable(test ${SRC_DIR}/test.cpp)
+ set_target_properties(test PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${BIN_DIR})
+target_link_libraries(test zmq pthread)

@@ -4,7 +4,7 @@
 #include<iostream>
 #include"RedisValueType.h"
 #include"RedisValue.h"
-class RedisValueParser final {
+class RedisValueParser final { //final表示该类不能被继承
 public:
     const std::string &str;  // 要解析的JSON字符串
     size_t i;                // 当前解析位置的索引
@@ -12,6 +12,13 @@ public:
     bool failed;             // 解析是否失败的标志
 
     // 处理失败情况，设置错误信息并返回错误的Json对象
+    //接受一个右值引用，返回一个RedisValue对象
+    //调用此fail函数时，会调用下面的通用的fail函数：
+    /*
+    template <typename T>
+    T fail(std::string &&msg, const T err_ret);
+    */
+    //传入一个右值引用和一个RedisValue对象
     RedisValue fail(std::string &&msg);
 
     // 通用的失败处理函数，设置错误信息并返回指定的错误返回值

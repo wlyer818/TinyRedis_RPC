@@ -2,27 +2,33 @@
 #include"FileCreator.h"
 
 
+//写入文件
 void RedisHelper::flush(){
     // 打开文件并覆盖写入
-    std::string filePath=getFilePath();
-    std::ofstream outputFile(filePath);
+    std::string filePath=getFilePath(); //获取要写入的文件的路径
+    std::ofstream outputFile(filePath); //打开文件
     // 检查文件是否成功打开
     if (!outputFile) {
         std::cout<<"文件："<<filePath<<"打开失败"<<std::endl;
         return ;
     }
+    //redisDataBase是个跳表，通过getHead()获取redisDataBase跳表的头节点
     auto currentNode=redisDataBase->getHead();
+    //遍历redisDataBase跳表，将跳表中的数据写入文件
     while(currentNode!=nullptr){
-        std::string key=currentNode->key;
-        RedisValue value=currentNode->value;
-        if(!key.empty())
+        std::string key=currentNode->key; //获取当前节点的key
+        RedisValue value=currentNode->value; //获取当前节点的value
+        if(!key.empty()) //如果key不为空，则将 {key : value} 键值对写入文件
+            //dump()函数将value（RedisValue类型）转换为字符串（string类型）
             outputFile<<key<<":"<<value.dump()<<std::endl;
-        currentNode=currentNode->forward[0];
+        //将currentNode指向currentNode在原始链表层（即第0层）中的下一个节点
+        currentNode=currentNode->forward[0];  //forward[i]中的i表示第i层
     }
     // 关闭文件
     outputFile.close();
 }
 
+//获取文件路径
 std::string RedisHelper::getFilePath(){
     std::string folder = DEFAULT_DB_FOLDER; //文件夹名
     std::string fileName = DATABASE_FILE_NAME; //文件名
@@ -40,9 +46,10 @@ std::string RedisHelper::select(int index){
     if(index<0||index>DATABASE_FILE_NUMBER-1){
         return "database index out of range.";
     }
-    flush(); //选择数据库之前先写入一下
+    flush(); //切换数据库之前先将当前数据库的数据写入文件，保证数据不丢失
+    //创建一个新的跳表并让redisDataBase指向这个新的跳表，作为新的数据库
     redisDataBase=std::make_shared<SkipList<std::string, RedisValue>>();
-    dataBaseIndex=std::to_string(index);
+    dataBaseIndex=std::to_string(index); //更新当前数据库索引
     std::string filePath=getFilePath(); //根据选择的数据库，修改文件路径，然后加载
 
     loadData(filePath);
@@ -59,9 +66,11 @@ std::string RedisHelper::keys(const std::string pattern){
     auto node=redisDataBase->getHead()->forward[0];
     int count=0;
     while(node!=nullptr){
+        //每个键以 1) "javastack" 的形式加入到res中
         res+=std::to_string(++count)+") "+"\""+node->key+"\""+"\n";
         node=node->forward[0];
     }
+    //去掉最后一个换行符
     if(!res.empty())
         res.pop_back();
     else{
@@ -75,10 +84,11 @@ std::string RedisHelper::keys(const std::string pattern){
 // (integer) 6
 // 获取键总数时不会遍历所有的键，直接获取内部变量，时间复杂度O(1)。
 std::string RedisHelper::dbsize()const{
+    //redisDataBase->size()方法直接获取跳表元素个数elementNumber，时间复杂度O(1)
     std::string res="(integer) " +std::to_string(redisDataBase->size());
     return res;
 }
-// 查询键是否存在
+// 批量查询键是否存在
 // 语法：exists key [key ...]
 // 127.0.0.1:6379> exists javastack java
 // (integer) 2
@@ -114,12 +124,15 @@ std::string RedisHelper::del(const std::vector<std::string>&keys){
 // 127.0.0.1:6379[2]> rename javastack javastack123
 // OK
 std::string RedisHelper::rename(const std::string&oldName,const std::string&newName){
+    //先查找oldName节点
     auto currentNode=redisDataBase->searchItem(oldName);
     std::string resMessage="";
+    //如果oldName节点不存在，则返回错误信息
     if(currentNode==nullptr){
         resMessage+=oldName+" does not exist!";
         return resMessage;
     }
+    //如果oldName节点存在，则将oldName节点的key（节点名称）更改为newName
     currentNode->key=newName;
     resMessage="OK";
     return resMessage;
@@ -131,15 +144,15 @@ std::string RedisHelper::rename(const std::string&oldName,const std::string&newN
 // nx：如果key不存在则建立，xx：如果key存在则修改其值，也可以直接使用setnx/setex命令。
 std::string RedisHelper::set(const std::string& key, const RedisValue& value,const SET_MODEL model){
     
-    if(model==XX){
+    if(model==XX){ //xx模式：如果key存在则修改其值value
         return setex(key,value);
-    }else if(model==NX){
+    }else if(model==NX){ //nx模式：如果key不存在则添加{key, value}
         return setnx(key,value);
-    }else{
+    }else{ //输入的model参数既不是NX也不是XX，则根据key是否存在来判断调用setnx还是setex函数
         auto currentNode=redisDataBase->searchItem(key);
-        if(currentNode==nullptr){
+        if(currentNode==nullptr){ //如果key节点不存在，则调用setnx函数添加{key, value}
             setnx(key,value);
-        }else{
+        }else{ //如果key节点存在，则调用setex函数将key节点的值更改为value
             setex(key,value);
         }
     }
@@ -147,37 +160,42 @@ std::string RedisHelper::set(const std::string& key, const RedisValue& value,con
     return "OK";
 }
 
+//nx模式：如果key不存在则添加{key, value}
 std::string RedisHelper::setnx(const std::string& key, const RedisValue& value){
-    auto currentNode=redisDataBase->searchItem(key);
+    auto currentNode=redisDataBase->searchItem(key); //查找key节点
+    //如果key节点存在，则返回错误信息
     if(currentNode!=nullptr){
         return "key: "+ key +"  exists!";
-    }else{
+    }else{ //如果key节点不存在，则添加{key, value}节点
         redisDataBase->addItem(key,value);
         
     }
     return "OK";
 }
+//xx模式：如果key存在则修改其值value
 std::string RedisHelper::setex(const std::string& key, const RedisValue& value){
-    auto currentNode=redisDataBase->searchItem(key);
+    auto currentNode=redisDataBase->searchItem(key); //查找key节点
+    //如果key节点不存在，则返回错误信息
     if(currentNode==nullptr){
         return "key: "+ key +" does not exist!";
-    }else{
+    }else{ //如果key节点存在，则将key节点的值更改为value
         currentNode->value=value;
     }
     return "OK";
 }
 // 127.0.0.1:6379> set javastack 666
 // OK
-// 获取键值
+// 获取输入键的值
 // 语法：get key
 // 127.0.0.1:6379[2]> get javastack
 // "666"
+//根据输入的key查找对应的value，返回value
 std::string RedisHelper::get(const std::string&key){
     auto currentNode=redisDataBase->searchItem(key);
     if(currentNode==nullptr){
         return "key: "+ key +" does not exist!";
     }
-    return currentNode->value.dump();
+    return currentNode->value.dump(); //将value（RedisValue类型）转换为字符串并返回
 
 }
 // 值递增/递减
@@ -187,33 +205,41 @@ std::string RedisHelper::get(const std::string&key){
 // 127.0.0.1:6379[2]> incr javastack
 // (integer) 667
 // 一次想递增N用incrby命令，如果是浮点型数据可以用incrbyfloat命令递增。
+//将key节点的值value递增1，返回递增后的值
 std::string RedisHelper::incr(const std::string& key){
     return incrby(key,1);
 }
+//将key节点的值value递增increment，返回递增后的值
 std::string RedisHelper::incrby(const std::string& key,int increment){
-    auto currentNode=redisDataBase->searchItem(key);
+    auto currentNode=redisDataBase->searchItem(key); //查找key节点
     std::string value="";
+    //如果key节点不存在，则新建节点{key, value}，并将key节点的值value设为increment，返回value
     if(currentNode==nullptr){
         value=std::to_string(increment);
         redisDataBase->addItem(key,value);
         return "(integer) "+value;
     }
-    value=currentNode->value.dump();
+    value=currentNode->value.dump(); //先将value（RedisValue类型）转换为字符串（前后有双引号）
     //去掉双引号
     value.erase(0, 1); 
     value.erase(value.size()-1);
+    //如果value不是数字类型，则返回错误信息
     for(char ch:value){
         if(!isdigit(ch)){
             std::string res="The value of "+key +" is not a numeric type";
             return res;
         }
     }
+    //将去掉双引号的value转换为整型，然后递增increment，再将递增后的值转换为字符串
     int curValue=std::stoi(value)+increment;
     value=std::to_string(curValue);
+    //将key节点的值value更新为递增后的值
     currentNode->value=value;
     std::string res="(integer) "+value;
     return res;
 }
+
+//对浮点型value进行递增
 std::string RedisHelper::incrbyfloat(const std::string&key,double increment){
     auto currentNode=redisDataBase->searchItem(key);
     std::string value="";
@@ -247,19 +273,18 @@ std::string RedisHelper::decrby(const std::string&key,int increment){
 // 语法：mset key value [key value ...]
 // 127.0.0.1:6379[2]> mset java1 1 java2 2 java3 3
 // OK
-
 std::string RedisHelper::mset(std::vector<std::string>&items){
-    if(items.size()%2!=0){
+    if(items.size()%2!=0){ //items中存放的是若干个键值对，所以items的大小必须是偶数
         return "wrong number of arguments for MSET.";
     }
     for(int i=0;i<items.size();i+=2){
         std::string key=items[i];
         std::string value=items[i+1];
-        set(key,value);
+        set(key,value); //设置键值对{key, value}
     }
     return "OK";
 }
-// 获取获取键值
+// 批量获取键的值
 // 语法：mget key [key ...]
 // 127.0.0.1:6379[2]> mget java1 java2
 // 1) "1"
@@ -275,6 +300,7 @@ std::string RedisHelper::mget(std::vector<std::string>&keys){
         std::string& key=keys[i];
         std::string value="";
         auto currentNode=redisDataBase->searchItem(key);
+        //如果key节点不存在，则将value设为"(nil)"
         if(currentNode==nullptr){
             value="(nil)";
             res+=std::to_string(i+1)+") "+value+"\n";
@@ -312,12 +338,13 @@ std::string RedisHelper::append(const std::string&key,const std::string &value){
     return "(integer) "+std::to_string(currentNode->value.dump().size());
 }
 
-
+//RedisHelper构造函数
 RedisHelper::RedisHelper(){
     FileCreator::createFolderAndFiles(DEFAULT_DB_FOLDER,DATABASE_FILE_NAME,DATABASE_FILE_NUMBER);
     std::string filePath=getFilePath();
     loadData(filePath);
 }
+//RedisHelper析构函数,析构时将数据写入文件
 RedisHelper::~RedisHelper(){flush();}
 
 
@@ -331,6 +358,7 @@ std::string RedisHelper::lpush(const std::string&key,const std::string &value){
     auto currentNode=redisDataBase->searchItem(key);
     std::string resMessage = "";
     int size = 0;
+    //
     if(currentNode==nullptr){
         std::vector<RedisValue>data;
         RedisValue redisList(data) ;

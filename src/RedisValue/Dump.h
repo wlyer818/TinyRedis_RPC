@@ -6,7 +6,9 @@
 
 // 表示null值
 struct NullStruct{
+    //无论传入的NullStruct对象是什么，都返回true,所有的NullStruct对象都是相等的
     bool operator==(NullStruct) const{ return true; }
+    //无论传入的NullStruct对象是什么，都返回false
     bool operator<(NullStruct) const { return false; }
 };
 
@@ -46,7 +48,7 @@ static void dump(const std::string &value, std::string &out) {
         // 根据字符进行相应的转义处理
         switch (ch) {
             case '\\': out += "\\\\"; break;
-            case '"': out += "\\\""; break;
+            case '\"': out += "\\\""; break;
             case '\b': out += "\\b"; break;
             case '\f': out += "\\f"; break;
             case '\n': out += "\\n"; break;
